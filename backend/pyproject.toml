@@ -1,7 +1,7 @@
 [project]
-name = "backend"
-version = "0.1.0"
-description = "Add your description here"
+name = "apparae-daemon"
+version = "0.0.1"
+description = "Apparae agency daemon — FastAPI + SQLite + SOP runtime."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
@@ -24,6 +24,10 @@ dependencies = [
     "opentelemetry-api>=1.34.1",
     "opentelemetry-sdk>=1.34.1",
     "opentelemetry-exporter-otlp-proto-http>=1.34.1",
+    # Local SQLite layer added by plan 12-A Task 5.
+    "aiosqlite>=0.20.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
 ]
 
 

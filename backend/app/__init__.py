@@ -16,7 +16,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Initialize FastAPI with title
-api = FastAPI(title="Eigent Multi-Agent System API")
+api = FastAPI(title="Apparae Agency Daemon API")
+
+
+@api.get("/healthz")
+async def healthz() -> dict:
+    """Health probe used by the OS service supervisor + Tauri daemon_supervisor.
+
+    Per plan 12-A flowchart: returns 200 + {"status":"ok"} once uvicorn is up.
+    """
+    return {"status": "ok"}
+
+
+__version__ = "0.0.1"
+
+
+@api.get("/version")
+async def version() -> dict:
+    """Reports the daemon version. Used by Smoke 6 (auto-update roundtrip)."""
+    return {"version": __version__}
 
 # Add CORS middleware
 api.add_middleware(

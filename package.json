@@ -1,10 +1,10 @@
 {
-  "name": "eigent",
-  "version": "0.0.91",
+  "name": "apparae",
+  "version": "0.0.1",
   "main": "dist-electron/main/index.js",
-  "description": "Eigent",
-  "author": "Eigent.AI",
-  "license": "MIT",
+  "description": "Apparae — autonomous AI companies, on your machine.",
+  "author": "HumanAI Ventures",
+  "license": "Apache-2.0",
   "private": true,
   "debug": {
     "env": {
