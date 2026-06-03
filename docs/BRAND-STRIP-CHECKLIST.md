@@ -34,6 +34,16 @@ customer sees them yet) and benefit from a single bulk pass.
       in Apple bundle URL types (mirrors the electron-builder.json change)
 - [ ] Welcome screen + Onboarding screens — handled by plan D
 - [ ] `backend/messages.pot` + `backend/lang/*.po` — backend i18n strings
+- [ ] **`~/.eigent` path references** — 52 hits across KEPT toolkits
+      (`audio_analysis_toolkit.py`, `google_calendar_toolkit.py`,
+      `linkedin_toolkit.py`, `hybrid_browser_*.py`, `skill_toolkit.py`,
+      `terminal_toolkit.py`, `web_deploy_toolkit.py`, `rag_toolkit.py`).
+      These are LOAD-BEARING data-isolation paths — when migrated, we
+      must also write a one-shot migration script in
+      `backend/app/db/migrations/` that moves `~/.eigent/<files>` →
+      `~/.apparae/<files>` on first daemon boot so existing Eigent users
+      don't lose their config/skills. Deferred to plan B (which rebuilds
+      the toolkit wiring + can co-locate the migration logic).
 
 ## KEEP entries (do not strip)
 
@@ -44,7 +54,8 @@ customer sees them yet) and benefit from a single bulk pass.
         header generator; keeps the copyright trail visible per §4
 - [KEEP] CHANGELOG entries that reference historical Eigent releases
 - [KEEP] `# ========= Copyright 2025-2026 @ Eigent.ai All Rights Reserved.`
-        header in untouched KEEP files — derivative work attribution
+        header in untouched KEEP files — derivative work attribution per
+        Apache-2.0 §4. 186 hits across `backend/app/`; ALL retained.
 
 ## Smoke 2 gate
 
