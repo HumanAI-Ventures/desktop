@@ -61,7 +61,13 @@ import {
   updateEnvBlock,
 } from './utils/envUtil';
 import { zipFolder } from './utils/log';
-import { addMcp, readMcpConfig, removeMcp, updateMcp } from './utils/mcpConfig';
+import {
+  addMcp,
+  migrateLegacyEigentConfig,
+  readMcpConfig,
+  removeMcp,
+  updateMcp,
+} from './utils/mcpConfig';
 import {
   checkVenvExistsForPreCheck,
   getBackendPath,
@@ -3386,6 +3392,15 @@ const handleBeforeClose = () => {
 
 // ==================== app event handle ====================
 app.whenReady().then(async () => {
+  // Apparae brand migration: copy legacy ~/.eigent/mcp.json to
+  // ~/.apparae/mcp.json on first boot post-rebrand (Stage 8A Plan A, Task 8).
+  // Idempotent — safe to call every boot; no-ops once new path exists.
+  try {
+    migrateLegacyEigentConfig();
+  } catch (error) {
+    log.error('[MAIN] Legacy Eigent config migration failed:', error);
+  }
+
   // Wait for profile initialization to complete
   log.info('[MAIN] Waiting for profile initialization...');
   try {

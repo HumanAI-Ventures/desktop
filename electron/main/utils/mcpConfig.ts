@@ -16,8 +16,48 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-const MCP_CONFIG_DIR = path.join(os.homedir(), '.eigent');
+// Apparae MCP config location (Stage 8A Plan A, Task 8).
+// Was ~/.eigent on the upstream Eigent fork; renamed to ~/.apparae per the
+// Stage 6 brand strip (memory: project_brand_name_apparae). The legacy
+// ~/.eigent path is migrated to ~/.apparae on app boot via the
+// `migrateLegacyEigentConfig` function exported below — first-run only.
+const MCP_CONFIG_DIR = path.join(os.homedir(), '.apparae');
 const MCP_CONFIG_PATH = path.join(MCP_CONFIG_DIR, 'mcp.json');
+const LEGACY_EIGENT_CONFIG_DIR = path.join(os.homedir(), '.eigent');
+const LEGACY_EIGENT_CONFIG_PATH = path.join(
+  LEGACY_EIGENT_CONFIG_DIR,
+  'mcp.json'
+);
+
+/**
+ * One-time migration: on app boot, if `~/.eigent/mcp.json` exists and
+ * `~/.apparae/mcp.json` does NOT, copy the former to the latter. The Eigent
+ * directory is left in place to avoid clobbering its other state (browser
+ * profiles, tokens, etc.) — `tool_controller.py` still reads/writes a few
+ * of those legacy subpaths and they will be migrated in a follow-up.
+ *
+ * Safe to call on every boot — it no-ops once `~/.apparae/mcp.json` exists.
+ */
+export function migrateLegacyEigentConfig(): void {
+  try {
+    if (fs.existsSync(MCP_CONFIG_PATH)) {
+      return; // Already migrated.
+    }
+    if (!fs.existsSync(LEGACY_EIGENT_CONFIG_PATH)) {
+      return; // Nothing to migrate.
+    }
+    if (!fs.existsSync(MCP_CONFIG_DIR)) {
+      fs.mkdirSync(MCP_CONFIG_DIR, { recursive: true });
+    }
+    const data = fs.readFileSync(LEGACY_EIGENT_CONFIG_PATH, 'utf-8');
+    fs.writeFileSync(MCP_CONFIG_PATH, data, 'utf-8');
+    console.log(
+      '[mcpConfig] Migrated legacy ~/.eigent/mcp.json -> ~/.apparae/mcp.json'
+    );
+  } catch (err) {
+    console.error('[mcpConfig] Legacy config migration failed:', err);
+  }
+}
 
 type McpServerConfig =
   | {

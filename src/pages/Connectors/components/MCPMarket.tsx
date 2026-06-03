@@ -22,6 +22,10 @@ import SearchInput from '@/components/SearchInput';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { TooltipSimple } from '@/components/ui/tooltip';
+import {
+  APPARAE_MCP_CATALOG,
+  type ApparaeMcpRow,
+} from '@/data/apparaeMcpCatalog';
 import { useAuthStore } from '@/store/authStore';
 import { ChevronLeft, CircleAlert, Store } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -51,13 +55,22 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay]);
   return debounced;
 }
-// map category name to svg file name
+// map category name to svg file name. `eigent-toolkit` and
+// `apparae-internal` fall back to the generic Store icon since no badge SVG
+// ships for those vendor tiers yet.
 const categoryIconMap: Record<string, string> = {
   anthropic: 'Anthropic',
   community: 'Community',
   official: 'Official',
   camel: 'Camel',
+  'eigent-toolkit': 'Camel',
+  'apparae-internal': 'Camel',
 };
+
+// Lookup map for the new Apparae catalog: slug -> ApparaeMcpRow. Used to
+// determine whether to render the "Coming Soon" badge on a market row.
+const APPARAE_CATALOG_BY_SLUG: Record<string, ApparaeMcpRow> =
+  Object.fromEntries(APPARAE_MCP_CATALOG.map((row) => [row.slug, row]));
 
 // load all svg files
 const svgIcons: Record<string, string> = {
@@ -126,35 +139,59 @@ export default function MCPMarket({
     });
   }, []);
 
-  // load data
+  // Map an Apparae catalog row into the legacy MCPItem shape the renderer
+  // expects. Synthetic id is the row index + 1 (stable across renders since
+  // APPARAE_MCP_CATALOG is a static const).
+  const apparaeRowToItem = useCallback(
+    (row: ApparaeMcpRow, idx: number): MCPItem => ({
+      id: idx + 1,
+      name: row.displayName,
+      key: row.slug,
+      description: row.description,
+      status: row.backingPlan === 'already-built' ? 1 : 0,
+      category: { name: row.vendor },
+      home_page: row.docsUrl,
+      install_command: { command: '', args: [], env: {} },
+    }),
+    []
+  );
+
+  // load data — sourced from the local APPARAE_MCP_CATALOG static import
+  // (Stage 8A Plan A repoint; previously fetched /api/v1/mcps from the
+  // upstream catalog endpoint).
   const loadData = useCallback(
     async (pageNum: number, kw: string, catId?: number, pageSize = 20) => {
       setIsLoading(true);
       setError('');
       try {
-        const params: any = { page: pageNum, size: pageSize, keyword: kw };
-        if (catId) params.category_id = catId;
-        const res = await proxyFetchGet('/api/v1/mcps', params);
-        if (res && Array.isArray(res.items)) {
-          // frontend deduplication
-          const all: MCPItem[] =
-            pageNum === 1 ? res.items : [...items, ...res.items];
-          const unique: MCPItem[] = Array.from(
-            new Map(all.map((i: MCPItem) => [i.id, i])).values()
-          );
-          setItems(unique);
-          setHasMore(res.items.length === pageSize);
-        } else {
-          if (pageNum === 1) setItems([]);
-          setHasMore(false);
+        // Filter the static catalog by keyword + category.
+        const lowerKw = (kw || '').toLowerCase().trim();
+        const filtered = APPARAE_MCP_CATALOG.filter((row) => {
+          const matchKeyword =
+            !lowerKw ||
+            row.displayName.toLowerCase().includes(lowerKw) ||
+            row.slug.toLowerCase().includes(lowerKw) ||
+            row.description.toLowerCase().includes(lowerKw);
+          // catId-based vendor filter is best-effort; we don't have a
+          // numeric category mapping yet, so just keep all rows when catId
+          // is set (UI dropdown still populates from /api/v1/mcp/categories
+          // in case the backend later supplies them).
+          const matchCategory = !catId || true;
+          return matchKeyword && matchCategory;
+        });
+        const mapped = filtered.map(apparaeRowToItem);
+        // Static catalog is finite — no pagination from the source.
+        if (pageNum === 1) {
+          setItems(mapped);
         }
+        setHasMore(false);
       } catch (err: any) {
         setError(err?.message || 'Load failed');
       } finally {
         setIsLoading(false);
       }
     },
-    [items]
+    [apparaeRowToItem]
   );
 
   useEffect(() => {
@@ -362,6 +399,18 @@ export default function MCPMarket({
                   <span className="truncate text-base font-bold leading-9 text-text-primary">
                     {item.name}
                   </span>
+                  {(() => {
+                    const row = APPARAE_CATALOG_BY_SLUG[item.key];
+                    const isComingSoon =
+                      row &&
+                      row.backingPlan !== 'already-built' &&
+                      !installedIds.includes(item.id);
+                    return isComingSoon ? (
+                      <span className="rounded-md bg-surface-tertiary px-2 py-0.5 text-xs font-medium text-text-muted">
+                        {t('setting.mcp-coming-soon')}
+                      </span>
+                    ) : null;
+                  })()}
                   <TooltipSimple content={item.description}>
                     <CircleAlert className="h-4 w-4 text-icon-secondary" />
                   </TooltipSimple>
