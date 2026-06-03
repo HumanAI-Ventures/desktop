@@ -1,18 +1,21 @@
-# ========= Copyright 2025-2026 @ Eigent.ai All Rights Reserved. =========
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ========= Copyright 2025-2026 @ Eigent.ai All Rights Reserved. =========
+# ========= Copyright 2025-2026 @ Apparae (Sharif Amlani) =========
+# Adapted from Eigent's backend/app/utils/oauth_state_manager.py (Apache 2.0)
+# per Plan 8A-B Task 3. No Eigent SaaS / dev.eigent.ai dependencies were
+# present in the source; this file remains a pure in-process state machine
+# with no external network calls. Plan A's tool_controller.py is the only
+# caller in the new layout.
+# Original copyright notice preserved as required by Apache 2.0:
+#   "Copyright 2025-2026 @ Eigent.ai All Rights Reserved.
+#    Licensed under the Apache License, Version 2.0."
+#   Source: https://github.com/eigent-ai/eigent
+# ========= Copyright 2025-2026 @ Apparae =========
 """
-OAuth authorization state manager for background authorization flows
+OAuth authorization state manager for background authorization flows.
+
+Phase 1 (Plan 8A-B Task 3): the state manager is intentionally a pure local,
+thread-locked, in-memory state machine. No proxyFetch / no notify back to a
+SaaS control plane. The AuthStatus enum is preserved verbatim because Plan A's
+tool_controller.py reads it.
 """
 
 import logging
