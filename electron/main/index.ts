@@ -21,6 +21,7 @@ import {
   Menu,
   nativeTheme,
   protocol,
+  safeStorage,
   session,
   shell,
 } from 'electron';
@@ -669,6 +670,88 @@ function registerIpcHandlers() {
     const port = await startAuthCallbackServer();
     return `http://localhost:${port}/auth/callback`;
   });
+
+  // ==================== Apparae credential vault (Plan 8A-B Task 2.3) ====================
+  // Electron safeStorage bridges to the OS keychain:
+  //   macOS  -> Keychain (encrypted with the user's login password)
+  //   Windows -> DPAPI / Credential Locker (encrypted with the user's session)
+  //   Linux  -> libsecret / GNOME Keyring (when available)
+  // safeStorage.encryptString returns a Buffer; we base64 it for IPC transport.
+  // Cipher text is persisted to ~/.apparae/credentials.encrypted.json by the
+  // credential-write handler below; the file stays encrypted on disk.
+  const APPARAE_CRED_DIR = path.join(os.homedir(), '.apparae');
+  const APPARAE_CRED_FILE = path.join(
+    APPARAE_CRED_DIR,
+    'credentials.encrypted.json',
+  );
+
+  ipcMain.handle('apparae-safe-storage-encrypt', (_event, plaintext: string) => {
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error(
+        'safeStorage encryption is not available on this OS; ' +
+          'OAuth tokens cannot be stored securely. Refusing to write.',
+      );
+    }
+    return safeStorage.encryptString(plaintext).toString('base64');
+  });
+
+  ipcMain.handle('apparae-safe-storage-decrypt', (_event, base64Cipher: string) => {
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error(
+        'safeStorage encryption is not available on this OS; ' +
+          'cannot decrypt stored OAuth tokens.',
+      );
+    }
+    return safeStorage.decryptString(Buffer.from(base64Cipher, 'base64'));
+  });
+
+  ipcMain.handle(
+    'apparae-credential-write',
+    async (
+      _event,
+      { provider, encrypted }: { provider: string; encrypted: string },
+    ) => {
+      await fsp.mkdir(APPARAE_CRED_DIR, { recursive: true });
+      let data: Record<string, string> = {};
+      try {
+        const existing = await fsp.readFile(APPARAE_CRED_FILE, 'utf-8');
+        data = JSON.parse(existing);
+      } catch {
+        // file doesn't exist yet; start fresh
+      }
+      data[provider] = encrypted;
+      await fsp.writeFile(APPARAE_CRED_FILE, JSON.stringify(data, null, 2));
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    'apparae-credential-read',
+    async (_event, { provider }: { provider: string }) => {
+      try {
+        const raw = await fsp.readFile(APPARAE_CRED_FILE, 'utf-8');
+        const data = JSON.parse(raw) as Record<string, string>;
+        return data[provider] ?? null;
+      } catch {
+        return null;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'apparae-credential-delete',
+    async (_event, { provider }: { provider: string }) => {
+      try {
+        const raw = await fsp.readFile(APPARAE_CRED_FILE, 'utf-8');
+        const data = JSON.parse(raw) as Record<string, string>;
+        delete data[provider];
+        await fsp.writeFile(APPARAE_CRED_FILE, JSON.stringify(data, null, 2));
+        return { ok: true };
+      } catch {
+        return { ok: true };
+      }
+    },
+  );
 
   // ==================== basic info handler ====================
   ipcMain.handle('get-browser-port', () => {

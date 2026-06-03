@@ -1,25 +1,31 @@
-// ========= Copyright 2025-2026 @ Eigent.ai All Rights Reserved. =========
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-// ========= Copyright 2025-2026 @ Eigent.ai All Rights Reserved. =========
+// ========= Copyright 2025-2026 @ Apparae (Sharif Amlani) =========
+// Adapted from Eigent's src/lib/oauth.ts (Apache 2.0) per Plan 8A-B Task 2:
+//   - localStorage swapped for Electron safeStorage via IPC
+//   - redirect_uri repointed from dev.eigent.ai to auth.apparae.com
+//     (configurable via APPARAE_OAUTH_CALLBACK_BASE_URL env)
+// Original copyright notice preserved as required by Apache 2.0:
+//   "Copyright 2025-2026 @ Eigent.ai All Rights Reserved.
+//    Licensed under the Apache License, Version 2.0."
+//   Source: https://github.com/eigent-ai/eigent
+// ========= Copyright 2025-2026 @ Apparae =========
 
 const EnvOauthInfoMap = {
   notion: 'NOTION_TOKEN',
 };
 
+// Plan 8A-B Task 2.5: exportable for callers (e.g. useIntegrationManagement.ts)
+// that need to construct provider-registration URLs aligned with the same host.
+export const APPARAE_OAUTH_CALLBACK_BASE_URL: string =
+  (typeof process !== 'undefined' && process.env?.APPARAE_OAUTH_CALLBACK_BASE_URL) ||
+  'https://auth.apparae.com';
+
 export class OAuth {
-  public client_name: string = 'Eigent';
-  public client_uri: string = 'https://eigent.ai/';
+  public client_name: string = 'Apparae';
+  public client_uri: string = 'https://apparae.com/';
   public redirect_uris: string[] = [];
+  // Plan 8A-B Task 2.1: explicit marker so callers can verify the storage
+  // backend swap happened (Smoke 2 reads this).
+  public storageBackend: 'safeStorage' = 'safeStorage';
 
   public url: string = '';
   public authServerUrl: string = '';
@@ -38,14 +44,25 @@ export class OAuth {
     }
   }
 
+  /**
+   * Plan 8A-B Task 2.5: exposes the redirect_uri the OAuth class will register
+   * with the provider, so Smoke 2 + Plan A's useIntegrationManagement can
+   * inspect it without re-reading the env var.
+   */
+  get redirectUri(): string {
+    return `${APPARAE_OAUTH_CALLBACK_BASE_URL}/oauth/${this.provider}/callback`;
+  }
+
   async startOauth(mcpName: string) {
     const mcp = mcpMap[mcpName as keyof typeof mcpMap];
     if (!mcp) throw new Error(`MCP ${mcpName} not found`);
 
     this.url = mcp.url;
     this.provider = mcp.provider;
+    // Plan 8A-B Task 2.4: repoint redirect URI from dev.eigent.ai to
+    // auth.apparae.com (configurable via APPARAE_OAUTH_CALLBACK_BASE_URL).
     this.redirect_uris = [
-      `https://dev.eigent.ai/api/v1/oauth/${this.provider}/callback`,
+      `${APPARAE_OAUTH_CALLBACK_BASE_URL}/oauth/${this.provider}/callback`,
     ];
     this.authServerUrl = new URL(mcp.url).origin;
     this.resourcePath = mcp?.resourcePath || this.resourcePath;
@@ -123,7 +140,7 @@ export class OAuth {
       body: params.toString(),
     }).then((res) => res.json());
 
-    this.saveToken(this.provider, email, {
+    await this.saveToken(this.provider, email, {
       ...token,
       expires_at: Date.now() + (token.expires_in || 3600) * 1000,
       meta: {
@@ -136,7 +153,7 @@ export class OAuth {
   }
 
   async refreshToken(provider: string, email: string) {
-    const tokenData = this.loadToken(provider, email);
+    const tokenData = await this.loadToken(provider, email);
     if (!tokenData?.refresh_token) return;
 
     // restore metadata from tokenData.meta
@@ -171,7 +188,7 @@ export class OAuth {
         value: newToken.access_token,
       });
     }
-    this.saveToken(provider, email, {
+    await this.saveToken(provider, email, {
       ...newToken,
       expires_at: Date.now() + (newToken.expires_in || 3600) * 1000,
       meta: {
@@ -182,37 +199,84 @@ export class OAuth {
     return newToken;
   }
 
-  // --- local token storage for multiple accounts and providers ---
+  // --- local token storage via Electron safeStorage IPC ---
+  //
+  // Plan 8A-B Task 2.2: every per-provider token blob is JSON-stringified,
+  // encrypted via Electron's safeStorage API (OS-keychain-backed: macOS
+  // Keychain / Windows Credential Locker / libsecret), and persisted to
+  // ~/.apparae/credentials.encrypted.json. The IPC handlers live in
+  // electron/main/index.ts (added in this same plan). Tokens never hit
+  // disk in plaintext and never leave Sharif's machine.
+  //
+  // saveToken/loadToken/clearToken keep the same (provider, email, ...)
+  // signature so existing callers in this file (getToken, refreshToken)
+  // continue to work unchanged.
 
   getStorageKey() {
     return 'oauth_tokens';
   }
 
-  getAllTokens(): Record<string, Record<string, any>> {
-    const data = localStorage.getItem(this.getStorageKey());
-    return data ? JSON.parse(data) : {};
+  private _getIpc(): any | null {
+    // window.ipcRenderer is exposed by Electron's preload script.
+    if (typeof window !== 'undefined' && (window as any).ipcRenderer) {
+      return (window as any).ipcRenderer;
+    }
+    return null;
   }
 
-  saveToken(provider: string, email: string, tokenData: any) {
-    const all = this.getAllTokens();
+  async getAllTokens(): Promise<Record<string, Record<string, any>>> {
+    const ipc = this._getIpc();
+    if (!ipc) return {};
+    const encrypted: string | null = await ipc.invoke('apparae-credential-read', {
+      provider: this.getStorageKey(),
+    });
+    if (!encrypted) return {};
+    try {
+      const decrypted: string = await ipc.invoke('apparae-safe-storage-decrypt', encrypted);
+      return JSON.parse(decrypted);
+    } catch {
+      return {};
+    }
+  }
+
+  async saveToken(provider: string, email: string, tokenData: any): Promise<void> {
+    const ipc = this._getIpc();
+    if (!ipc) return;
+    const all = await this.getAllTokens();
     if (!all[provider]) all[provider] = {};
     all[provider][email] = tokenData;
-    localStorage.setItem(this.getStorageKey(), JSON.stringify(all));
+    const encrypted: string = await ipc.invoke(
+      'apparae-safe-storage-encrypt',
+      JSON.stringify(all),
+    );
+    await ipc.invoke('apparae-credential-write', {
+      provider: this.getStorageKey(),
+      encrypted,
+    });
   }
 
-  loadToken(provider: string, email: string): any | null {
-    const all = this.getAllTokens();
+  async loadToken(provider: string, email: string): Promise<any | null> {
+    const all = await this.getAllTokens();
     return (all?.[provider] && all?.[provider]?.[email]) || null;
   }
 
-  clearToken(provider: string, email: string) {
-    const all = this.getAllTokens();
+  async clearToken(provider: string, email: string): Promise<void> {
+    const ipc = this._getIpc();
+    if (!ipc) return;
+    const all = await this.getAllTokens();
     if (all[provider] && all[provider][email]) {
       delete all[provider][email];
       if (Object.keys(all[provider]).length === 0) {
         delete all[provider];
       }
-      localStorage.setItem(this.getStorageKey(), JSON.stringify(all));
+      const encrypted: string = await ipc.invoke(
+        'apparae-safe-storage-encrypt',
+        JSON.stringify(all),
+      );
+      await ipc.invoke('apparae-credential-write', {
+        provider: this.getStorageKey(),
+        encrypted,
+      });
     }
   }
 
