@@ -1,0 +1,12 @@
+Eigent — original work
+Copyright (c) 2024-2026 Eigent AI authors
+https://github.com/eigent-ai/eigent
+Licensed under the Apache License, Version 2.0.
+
+This file preserves the original copyright notice from the Eigent project,
+which forms the basis of the Apparae desktop client. The Apparae fork
+strips the Eigent brand and replaces the CAMEL Workforce orchestrator with
+HumanAI Ventures' SOP runtime, but retains a substantial portion of the
+original FastAPI backend, Tauri/Electron shell, and React frontend.
+
+See LICENSE for the full Apache-2.0 license text.
