@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Apparae Linux postinst — registers the daemon as a systemd --user unit.
+# Per plan 12-A Task 8.
+set -euo pipefail
+
+HOME_DIR="${HOME}"
+UNIT_SRC="$(dirname "$0")/apparae.service"
+UNIT_DEST="${HOME_DIR}/.config/systemd/user/apparae.service"
+DAEMON_PATH="/usr/lib/apparae/apparae-daemon"
+
+mkdir -p "${HOME_DIR}/.config/systemd/user"
+mkdir -p "${HOME_DIR}/.local/state/apparae"
+mkdir -p "${HOME_DIR}/.apparae"
+
+sed -e "s|__DAEMON_PATH__|${DAEMON_PATH}|g" \
+    -e "s|__HOME__|${HOME_DIR}|g" \
+    "${UNIT_SRC}" > "${UNIT_DEST}"
+
+systemctl --user daemon-reload
+systemctl --user enable --now apparae.service
+
+echo "Apparae agency daemon registered as systemd --user unit."

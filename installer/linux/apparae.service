@@ -1,0 +1,16 @@
+[Unit]
+Description=Apparae agency daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=__DAEMON_PATH__
+Restart=always
+RestartSec=5s
+Environment="APPARAE_DATA_DIR=__HOME__/.apparae"
+StandardOutput=append:__HOME__/.local/state/apparae/stdout.log
+StandardError=append:__HOME__/.local/state/apparae/stderr.log
+
+[Install]
+WantedBy=default.target
