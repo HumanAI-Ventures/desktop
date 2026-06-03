@@ -91,20 +91,41 @@ export function update(win: Electron.BrowserWindow) {
   autoUpdater.setFeedURL(feed);
   console.log('[AutoUpdater] setFeedURL:', feed);
 
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify().catch((err: Error) => {
-      console.log('[AutoUpdater] Initial update check failed:', err.message);
-    });
-  }
+  // ============================================================
+  // AUTO-UPDATER DISABLED FOR v0 DEV (2026-06-02 brand-strip cleanup).
+  //
+  // The runtime auto-updater config in this file historically pointed at
+  // `eigent-ai/eigent`'s GitHub releases (see line ~83-84 above). If a v0
+  // dev build accepted the "new version available" prompt, it would
+  // download + install upstream Eigent's signed release binary over the
+  // top of our Apparae fork -- wiping the Pattern-2 surgery + brand strip.
+  //
+  // Stream F (signed release pipeline + cosign + Apple notarytool +
+  // Microsoft Authenticode) re-enables this block with the feed pointed at
+  // HumanAI-Ventures/desktop's release channel. Until then, customers
+  // upgrade by reinstalling.
+  // ============================================================
+  const APPARAE_AUTO_UPDATE_DISABLED = true;
+  if (!APPARAE_AUTO_UPDATE_DISABLED) {
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdatesAndNotify().catch((err: Error) => {
+        console.log('[AutoUpdater] Initial update check failed:', err.message);
+      });
+    }
 
-  if (!app.isPackaged) {
-    // In development, check for updates but don't fail if it errors
-    autoUpdater.checkForUpdates().catch((err: Error) => {
-      console.log(
-        '[DEV] Update check failed (expected in dev environment):',
-        err.message
-      );
-    });
+    if (!app.isPackaged) {
+      // In development, check for updates but don't fail if it errors
+      autoUpdater.checkForUpdates().catch((err: Error) => {
+        console.log(
+          '[DEV] Update check failed (expected in dev environment):',
+          err.message
+        );
+      });
+    }
+  } else {
+    console.log(
+      '[AutoUpdater] Disabled for v0 dev. Re-enables in Stream F with HumanAI-Ventures/desktop feed.'
+    );
   }
 
   // Handle errors globally to prevent crashes
