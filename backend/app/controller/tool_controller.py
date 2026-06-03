@@ -41,6 +41,84 @@ logger = logging.getLogger("tool_controller")
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# Apparae MCP install dispatch table (Stage 8A Plan A, Task 7)
+#
+# Maps every MCP slug shipped by `src/data/apparaeMcpCatalog.ts` to a handler
+# tier. The three placeholder handlers below return HTTP 503 until the
+# matching backing plan (8A-C or 8A-D) ships the actual MCP client wiring.
+# The Eigent-inherited toolkits (notion / google_calendar / linkedin) continue
+# to be served by the legacy if/elif branches further down in install_tool()
+# to keep their existing OAuth flows intact.
+# ---------------------------------------------------------------------------
+
+
+async def _install_via_mcp_oauth(tool: str) -> dict:
+    """Placeholder for MCPs that use OAuth PKCE. Plan 8A-C / 8A-D wires."""
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            f"MCP '{tool}' not yet wired. Backing module ships in Plan 8A-C"
+            " or 8A-D. See"
+            " docs/prd_agency_plans/14b-v1-stage-8a-substrate-solo/."
+        ),
+    )
+
+
+async def _install_via_api_key(tool: str) -> dict:
+    """Placeholder for MCPs that use a static API key in the request header."""
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            f"MCP '{tool}' not yet wired. Backing module ships in Plan 8A-C"
+            " or 8A-D. See"
+            " docs/prd_agency_plans/14b-v1-stage-8a-substrate-solo/."
+        ),
+    )
+
+
+async def _install_via_oauth_token_header(tool: str) -> dict:
+    """Placeholder for MCPs that carry a long-lived token in a custom header."""
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            f"MCP '{tool}' not yet wired. Backing module ships in Plan 8A-D."
+            " See docs/prd_agency_plans/14b-v1-stage-8a-substrate-solo/."
+        ),
+    )
+
+
+async def _install_via_eigent_toolkit(tool: str) -> dict:
+    """Marker only — the legacy Notion / GCal / LinkedIn branches handle these."""
+    raise HTTPException(
+        status_code=500,
+        detail=(
+            f"Internal error: tool '{tool}' should be handled by legacy"
+            " branch, not the dispatch table."
+        ),
+    )
+
+
+APPARAE_MCP_INSTALL_HANDLERS = {
+    # Plan 8A-C (v1 load-bearing)
+    "slack": _install_via_mcp_oauth,
+    "github": _install_via_mcp_oauth,
+    "supabase": _install_via_mcp_oauth,
+    "stripe": _install_via_api_key,
+    "resend": _install_via_api_key,
+    "vercel": _install_via_mcp_oauth,
+    # Plan 8A-D (v1.5)
+    "hubspot": _install_via_mcp_oauth,
+    "notion": _install_via_eigent_toolkit,  # already shipped — see legacy branch
+    "linear": _install_via_mcp_oauth,
+    "cloudflare": _install_via_mcp_oauth,
+    "figma": _install_via_oauth_token_header,
+    "posthog": _install_via_api_key,
+    "agentphone": _install_via_api_key,
+    "langsmith": _install_via_api_key,
+}
+
+
 @router.post("/install/tool/{tool}", name="install tool")
 async def install_tool(tool: str):
     """
@@ -256,6 +334,14 @@ async def install_tool(tool: str):
                 detail=f"Failed to install {tool}. Check server logs for details.",
             )
     else:
+        # Apparae MCP dispatch table (Stage 8A Plan A). The 14 slugs from
+        # src/data/apparaeMcpCatalog.ts route here when no legacy branch
+        # matches. Most return 503 until Plans 8A-C / 8A-D wire the backing
+        # MCP clients; 'notion' is intentionally not in the table because
+        # the legacy 'notion' branch above already handles it.
+        handler = APPARAE_MCP_INSTALL_HANDLERS.get(tool)
+        if handler is not None:
+            return await handler(tool)
         raise HTTPException(
             status_code=404,
             detail=(
@@ -264,6 +350,8 @@ async def install_tool(tool: str):
                 " ['notion',"
                 " 'google_calendar',"
                 " 'linkedin']"
+                " plus the 14 Apparae catalog MCPs"
+                " (see src/data/apparaeMcpCatalog.ts)."
             ),
         )
 
